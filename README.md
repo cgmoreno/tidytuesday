@@ -4,4 +4,4 @@
 
 * **05-14-2019:** nobel prize winners dataset, eda on how #pubs/year have changed over time
 
-
+![this week](05-14-2019/nobel_prize_files/figure-markdown_github/unnamed-chunk-2-1.png)
