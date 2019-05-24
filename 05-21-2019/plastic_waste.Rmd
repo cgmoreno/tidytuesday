@@ -1,0 +1,188 @@
+---
+title: "Tidy Tuesday 05-21-2019"
+subtitle: "Plastic Waste"
+author: "Catalina Moreno"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE,
+                      comment = NA)
+library(tidyverse)
+```
+
+## Read in
+
+```{r, readin}
+coast_vs_waste <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/coastal-population-vs-mismanaged-plastic.csv")
+
+mismanaged_vs_gdp <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-mismanaged-plastic-waste-vs-gdp-per-capita.csv")
+
+waste_vs_gdp <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-21/per-capita-plastic-waste-vs-gdp-per-capita.csv")
+
+```
+
+### coast_vs_waste
+
+```{r, eda1}
+coast_vs_waste %>% head()
+
+coast_vs_waste %>% purrr::map_df(function(x) {sum(is.na(x))}) %>% 
+  knitr::kable(caption = "Count of Missing Values")
+```
+
+Appears to be a lot of missing data. 
+
+```{r, eda1b}
+coast_vs_waste %>% na.omit() %>% nrow() 
+coast_vs_waste %>% na.omit() %>% distinct(Year)
+# coast_vs_waste %>% na.omit() %>% distinct(Entity) 
+coast_vs_waste %>% na.omit() %>% count(Entity) %>% count(n)
+```
+
+Full data for year 2010, 175 different countries. 
+
+```{r}
+coast_vs_waste %>% na.omit() %>% ggplot(mapping = aes(x = `Mismanaged plastic waste (tonnes)`)) + geom_histogram() + facet_wrap(~Year)
+```
+
+Right-skew, try log-transform:
+
+```{r}
+coast_vs_waste %>% na.omit() %>% ggplot(mapping = aes(x = log(`Mismanaged plastic waste (tonnes)`))) + geom_histogram() + facet_wrap(~Year)
+
+```
+
+Check relationship between Population and Mismanaged Plastic Waste:
+
+
+```{r}
+coast_vs_waste %>% 
+  select(`Mismanaged plastic waste (tonnes)`, `Total population (Gapminder)`, `Coastal population`) %>% 
+  tidyr::gather(key = "key", value = "value", -`Mismanaged plastic waste (tonnes)`) %>% 
+  ggplot(mapping = aes(x = log(value), y = log(`Mismanaged plastic waste (tonnes)`), color = key)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  facet_wrap(~key) +
+  theme(legend.position = "bottom") +
+  labs(x = "log(population)", title = "Log-Log Relationship")
+```
+
+Strong relationship between log-pop and log-mismanaged plastic. 
+
+Check pop vs time:
+```{r, pop_vs_time}
+coast_vs_waste %>% 
+  ggplot(mapping = aes(x = Year, y = `Total population (Gapminder)`, group = Code)) + geom_line()
+```
+
+
+Which are the two lines with largest populations? 
+
+```{r}
+coast_vs_waste %>% filter(`Total population (Gapminder)` > 5e8) %>% distinct(Code)
+```
+
+Can bring in continent info and color?
+
+```{r}
+library(countrycode)
+continents <- codelist %>%
+  select(iso3c, continent)
+
+coast_vs_waste %>% 
+  left_join(continents %>% select(Code = iso3c, continent), by = "Code") %>% 
+    filter(!is.na(continent)) %>% 
+  ggplot(mapping = aes(x = Year, y = `Total population (Gapminder)`, group = Code, color = continent)) + geom_line() + facet_wrap(~continent)
+```
+
+### mismanaged_vs_gdp
+
+```{r, eda2}
+mismanaged_vs_gdp %>% head()
+```
+
+Assume Total pop is same as coast_vs_waste, check:
+
+```{r}
+## check join
+coast_vs_waste %>% select(Code, Year, `Total population (Gapminder)`) %>% 
+  inner_join(mismanaged_vs_gdp %>% select(Code, Year, `Total population (Gapminder)`),
+             by = c("Code", "Year")) %>% 
+  ggplot(mapping = aes(x = `Total population (Gapminder).x`, y = `Total population (Gapminder).y`)) +
+  geom_point(alpha = 0.5) + 
+  geom_abline()
+```
+
+Same. Check missing values in this dataset:
+
+```{r}
+mismanaged_vs_gdp %>% purrr::map_df(function(x) {sum(is.na(x))}) %>% knitr::kable(caption = "Count of Missing Values")
+
+mismanaged_vs_gdp %>% na.omit() %>% distinct(Year)
+```
+
+Also 2010 only. 
+
+Check GDP per capita over time:
+```{r}
+mismanaged_vs_gdp %>% filter(!is.na(`GDP per capita, PPP (constant 2011 international $) (Rate)`)) %>% 
+  ggplot(mapping = aes(x = Year, y = `GDP per capita, PPP (constant 2011 international $) (Rate)`, group = Code)) + geom_line()
+```
+
+One group that looks like >1 value per year?
+```{r}
+mismanaged_vs_gdp %>% 
+  count(Entity, Year) %>% 
+  filter(n > 1) 
+```
+
+
+Nothing comes up. 
+
+Visualize per capita GDP vs per capita mismanaged waste, by continent:
+
+```{r}
+mismanaged_vs_gdp %>% filter(!is.na(`GDP per capita, PPP (constant 2011 international $) (Rate)`)) %>% 
+  left_join(continents %>% select(Code = iso3c, continent), by = "Code") %>% 
+  filter(!is.na(continent)) %>% 
+  ggplot(mapping = aes(x = log(`GDP per capita, PPP (constant 2011 international $) (Rate)`),
+                       y = log(`Per capita mismanaged plastic waste (kilograms per person per day)`),
+                       color = continent)) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~continent) + 
+  labs(y = "log(kg mismanged plastic/person-day)", x = "log(GDP per capita)") +
+  theme(legend.position = "bottom")
+```
+
+All continents except Africa show decrease in mismanaged plastic with increase in GDP in 2010.
+
+### waste_vs_gdp
+
+
+```{r, eda3}
+waste_vs_gdp %>% head()
+waste_vs_gdp %>% na.omit() %>% distinct(Year)
+```
+
+2010 only as well. 
+
+Lastly compare per capita plastic vs per capit mismangaged plastic, bring in continent information, too:
+
+```{r}
+mismanaged_vs_gdp %>% select(mismanaged = `Per capita mismanaged plastic waste (kilograms per person per day)`, Code, Year) %>% 
+  filter(!is.na(mismanaged)) %>% 
+  inner_join(waste_vs_gdp %>% 
+               select(Code, Year, plastic= `Per capita plastic waste (kilograms per person per day)`), 
+             by = c("Code", "Year")) %>% 
+  left_join(continents %>% select(continent, Code = iso3c), by= "Code") %>% 
+  ggplot(mapping = aes(x = plastic, y = mismanaged, color = continent)) + 
+  geom_point() + 
+  facet_wrap(~continent, scales = "free_x") + 
+  theme(legend.position = "bottom")
+```
+
