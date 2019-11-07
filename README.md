@@ -8,4 +8,5 @@
 
 * **11-05-2019:** ACS bike/walk commuter data
 
-![thisweek](11-05-2019_files/figure-markdown_github/unnamed-chunk-9-1.png)
+![this week](11-05-2019/11-05-2019_files/figure-markdown_github/unnamed-chunk-26-1.png)
+
