@@ -1,0 +1,307 @@
+---
+title: "Tidy Tuesday - Walk vs. Bike State Data"
+author: "Catalina Moreno"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE,
+                      comment = NA)
+```
+
+## Read in Data
+
+```{r}
+library(tidyverse)
+
+commute_mode <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-11-05/commute.csv")
+```
+
+## Check data
+
+```{r}
+commute_mode %>% glimpse()
+```
+
+Any missing data?
+
+```{r}
+commute_mode %>% purrr::map_df(function(x) {sum(is.na(x))})
+```
+Check missing data:
+
+```{r}
+commute_mode %>% filter(is.na(state_abb))
+```
+
+Fix DC:
+```{r}
+commute_mode <- commute_mode %>% mutate(state_abb = ifelse(state %in% "District of Columbia", "DC", state_abb))
+## assign region, checking VA/MD
+commute_mode %>% filter(state_abb %in% c("VA", "MD")) %>% distinct(state_region)
+
+commute_mode <- commute_mode %>% mutate(state_region = ifelse(state %in% "District of Columbia", "South", state_region))
+```
+
+See error for two others cities. 
+```{r}
+commute_mode %>% filter(city %in% c("El Paso de Robles (Paso Robles) city", "West Springfield Town city"))
+```
+
+Fix:
+```{r}
+# state_abb and state_region missing
+commute_mode <- commute_mode %>% 
+  mutate(state_abb = ifelse(city %in% "El Paso de Robles (Paso Robles) city", "CA", state_abb),
+         state_abb = ifelse(city %in% "West Springfield Town city", "MA", state_abb),
+         state_region = ifelse(city %in% "El Paso de Robles (Paso Robles) city", "West", state_region),
+         state_region = ifelse(city %in% "West Springfield Town city", "Northeast", state_region),
+         state = ifelse(city %in% "El Paso de Robles (Paso Robles) city", "California", state),
+         state = ifelse(city %in% "West Springfield Town city", "Massachusetts", state))
+```
+
+
+Now check # entries per city/state:
+
+```{r}
+commute_mode %>% 
+  group_by(city, state) %>% 
+  summarise(num_mode = n_distinct(mode)) %>% 
+  ggplot(mapping = aes(x = num_mode)) + geom_bar(width = 0.5) + labs(title = "# entries per city (for a mode)")
+```
+
+
+Check state_abb vs state:
+```{r}
+commute_mode %>% distinct(state) %>% nrow()
+commute_mode %>% distinct(state_abb) %>% nrow()
+```
+
+## EDA
+
+```{r, fig.height=8}
+commute_mode %>% 
+  group_by(state_abb) %>% mutate(count = n_distinct(city)) %>% 
+  ungroup() %>% 
+  mutate(state_abb = factor(state_abb)) %>% 
+  ggplot(mapping = aes(x = forcats::fct_reorder(state_abb, count), fill = state_region)) + 
+  geom_bar() + coord_flip() +
+  labs(x = "State Abb", title = "# entries per state (# polled cities)") +
+  theme(legend.position = "bottom")
+```
+
+The number of cities polled is unbalanced across states, CA particularly. 
+
+```{r, fig.height=8}
+commute_mode %>% 
+  group_by(state_abb) %>% mutate(count = n_distinct(city)) %>% 
+  ungroup() %>% 
+  mutate(state_abb = factor(state_abb)) %>% 
+  ggplot(mapping = aes(x = forcats::fct_reorder(state_abb, count), fill = city_size)) + 
+  geom_bar() + coord_flip() +
+  labs(x = "State Abb", title = "# entries per state (# polled cities)") +
+  theme(legend.position = "bottom")
+```
+
+Mostly small cities polled. 
+
+Visualize percents:
+
+```{r}
+commute_mode %>% 
+  ggplot(mapping = aes(x = percent, color = mode)) + geom_freqpoly() + 
+  facet_grid(city_size ~ state_region, scales = "free")
+```
+
+Northeast demonstrates the biggest difference between Bike and Walk; overall more Walkers than Bikers, but neither commute mode is very high. 
+
+Check the margin of error (MOE):
+
+```{r}
+commute_mode %>% 
+  ggplot(mapping = aes(x = moe,  y = ..density.., color = mode)) + geom_freqpoly() + 
+  facet_grid(state_region ~ city_size)
+```
+
+## Oddities with dataset:
+
+Where is MOE > percent?
+
+```{r}
+commute_mode %>% filter(moe > percent) %>% nrow()
+```
+
+These CI would span zero percent. 
+
+MOE when n = 0? 
+```{r}
+commute_mode %>% filter(n == 0) %>% 
+  ggplot(mapping = aes(x = moe)) + geom_histogram() +
+  labs(title = "Margin of error on n = 0 observations")
+```
+
+How are CI's calculated if n = 0?
+
+```{r}
+commute_mode %>% pull(n) %>% summary()
+commute_mode %>% arrange(desc(n)) %>% head()
+```
+
+Paper lists NYC with values > 3e6. What are units here? Difficulties aligning with values in paper. 
+
+
+## Bring in other info
+
+```{r}
+acs_data <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-11-05/table_3.csv")
+
+age_data <- acs_data %>% 
+  slice(1:6)
+
+gender_data <- acs_data %>% 
+  slice(9:10) %>% 
+  rename("gender" = age)
+
+race_data <- acs_data %>% 
+  slice(13:18) %>% 
+  rename("race" = age)
+
+children_data <- acs_data %>% 
+  slice(20:24) %>% 
+  rename("children" = age)
+
+income_data <- acs_data %>% 
+  slice(27:36) %>% 
+  rename("income" = age)
+
+education_data <- acs_data %>% 
+  slice(39:43) %>% 
+  rename("education" = age)
+```
+
+```{r, fig.height=10, fig.width=10}
+age_data %>% select(val = age, bike_percent, walk_percent) %>% mutate(type = "age") %>% 
+  bind_rows(education_data %>% select(val = education, bike_percent, walk_percent) %>% 
+              mutate(type = "edu")) %>%
+    bind_rows(gender_data %>% select(val = gender, bike_percent, walk_percent) %>% 
+              mutate(type = "gender")) %>% 
+    bind_rows(race_data %>% select(val = race, bike_percent, walk_percent) %>% 
+              mutate(type = "race")) %>% 
+    bind_rows(children_data %>% slice(-1) %>%  select(val = children, bike_percent, walk_percent) %>% 
+              mutate(type = "children")) %>% 
+    bind_rows(income_data %>% select(val = income, bike_percent, walk_percent) %>% 
+              mutate(type = "income")) %>% 
+  ggplot(mapping = aes(x = fct_reorder(val, bike_percent), y = bike_percent, fill = type)) + 
+  geom_col() + 
+  facet_grid(type~., scales = "free") +
+  coord_flip() +
+  labs(x = "", y = "%", title = "% Bikers by Deomgraphic Groups") +
+  theme(legend.position = "bottom")
+```
+
+## Reproduce figs from paper
+
+Princiapl cities have rate of 4.3% of walking to work according to paper, true? 
+```{r}
+commute_mode %>% 
+  filter(n > 0, percent > 0) %>% 
+  mutate(denom = n/(percent/100)) %>% 
+  group_by(city_size, mode) %>% summarise(unweighted_perc = sum(n)/sum(denom)*100) %>% 
+  ggplot(mapping = aes(x = mode, fill = city_size, y = unweighted_perc)) + 
+  geom_col(position = "dodge") +
+  labs(y = "% Commuters")
+```
+
+Unsure what is meant by principal cities, but Large city % is ~4.5%.
+
+```{r}
+commute_mode %>% filter(mode %in% "Bike") %>% arrange(desc(percent)) %>% head(n = 5)
+```
+```{r}
+commute_mode %>% filter(mode %in% "Walk") %>% arrange(desc(percent)) %>% head(n = 5)
+```
+
+```{r}
+commute_mode %>% filter(str_detect(city, "Portland"), state %in% "Oregon")
+```
+
+These values check out. 
+
+Try to recreate figure 4:
+
+```{r}
+commute_mode %>% 
+  filter(mode %in% "Walk") %>% 
+  filter(n > 0, percent >0) %>% 
+  mutate(denom = n/(percent/100)) %>% 
+  group_by(state_region, city_size) %>% summarise(unweighted_perc = sum(n)/sum(denom)*100) %>% 
+  ggplot(mapping = aes(x = state_region, y = unweighted_perc, fill = city_size)) +
+  geom_col(position = "dodge") +
+  labs(y = "% Walk Commuters", x = "Region")
+  
+```
+
+Try spatial views:
+
+```{r}
+us <- map_data("state")
+us %>% 
+  left_join(commute_mode %>% 
+              mutate(state = str_to_lower(state)) %>% 
+              group_by(state) %>% summarise(num_polled_cities = n_distinct(city)),
+            by = c("region" = "state")) %>% 
+ggplot(mapping = aes(x = long, y = lat, group = group, fill = num_polled_cities)) +
+  geom_polygon(colour = "white") + 
+  theme(legend.position = "bottom") +
+  viridis::scale_fill_viridis() + labs(title = "# of polled cities/state in ACS data")
+```
+
+
+```{r, include = FALSE}
+# max_val <- commute_mode %>% filter(mode %in% "Bike") %>% pull(percent) %>% max()
+# 
+# us %>% 
+#   left_join(commute_mode %>% 
+#               mutate(state = str_to_lower(state)) %>% 
+#               filter(mode %in% "Bike") %>% 
+#               group_by(state) %>% 
+#               summarise(mean_perc = mean(percent)) %>% 
+#               mutate(bike_perc_class = cut(mean_perc, 
+#                                            breaks = c(0, 0.19, 0.39, 0.59, 0.79, 0.99, 1.99, max_val),
+#                                            include.lowest = TRUE)), 
+#             by = c("region" = "state")) %>%
+#   ggplot(mapping = aes(x = long, y = lat, group = group, fill = bike_perc_class)) +
+#   geom_polygon(colour = "white") + 
+#   theme(legend.position = "bottom") +
+#   viridis::scale_fill_viridis(discrete = TRUE) + labs(title = "Mean % Bike Commuters by State")
+
+```
+
+Visualize % bike commuter by state; instead of averaging %'s within state (bc not equally weighted), calculate total by city and aggregate total polled and total bikers. 
+```{r}
+## unweight?
+us %>% 
+  left_join(commute_mode %>% 
+              mutate(state = str_to_lower(state)) %>% 
+              filter(n > 0, percent > 0, mode %in% "Bike") %>% 
+              mutate(denom = n/(percent/100)) %>% 
+              group_by(state) %>% 
+              summarise(perc = sum(n)/sum(denom)*100),
+            by = c("region" = "state")) %>% 
+  ggplot(mapping = aes(x = long, y = lat, group = group, fill = perc)) +
+  geom_polygon(colour = "white") + 
+  theme(legend.position = "bottom") +
+  viridis::scale_fill_viridis(discrete = FALSE) + labs(title = "Mean % Bike Commuters by State")
+
+```
+
+## Summary
+
+Overall, could not quite recreate aggregate % values, but close. Required reversing percents to find total polled within city, and aggregating total commuter by total polled within desired group (state, region, city size etc).
+
+Also, a few additional data cleaning steps; and would be interested to learn how MOE were calcualted.
+
+Surprised that the % of walkers and bikers is so low, especially in the south where the weather is warmer. Also surprised how data was collected -- mostly small cities and a lot in California. 
