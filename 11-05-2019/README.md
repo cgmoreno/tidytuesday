@@ -1,1 +1,5 @@
-!(11-05-2019_files/figure-markdown_github/unnamed-chunk-9-1.png)
+!(11-05-2019/11-05-2019_files/figure-markdown_github/unnamed-chunk-26-1.png)
+
+
+
+
