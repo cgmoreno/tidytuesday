@@ -1,0 +1,351 @@
+---
+title: "Tidy Tuesday 04-07-2020"
+author: "Catalina Moreno"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, comment = NA)
+```
+
+## Load libs
+
+```{r}
+library(tidyverse)
+```
+
+## Read in data
+
+```{r}
+stage_dat <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-07/stage_data.csv")
+
+tdf_stages <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-07/tdf_stages.csv")
+
+tdf_winners <- read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-07/tdf_winners.csv")
+```
+
+## tdf_winners data
+
+```{r}
+tdf_winners %>% glimpse()
+```
+
+Add year:
+
+```{r}
+tdf_winners <- tdf_winners %>% mutate(year = lubridate::year(start_date))
+```
+
+Can see some missingness. Check:
+
+```{r}
+tdf_winners %>% purrr::map_df(function(x) {sum(is.na(x))}) %>% 
+  gather() %>% 
+  filter(value > 0) %>% 
+  ggplot(mapping = aes(x = fct_reorder(key, value), y = value/nrow(tdf_winners))) + 
+  geom_col(width = 0.5) + 
+  coord_flip() + labs(x = "Variable", y = "Fraction Missing Observations")
+```
+
+Have winners, but do not have time_overall or time_margin? Check: 
+
+```{r}
+tdf_winners %>% filter(is.na(time_overall)) %>% select(year)
+```
+
+```{r}
+tdf_winners %>% pull(edition) %>% range()
+tdf_winners %>% pull(year) %>% range()
+```
+
+Interesting that have time records 1903, 1904, but gap 1905-1912. 
+
+Check for repeat winners:
+
+```{r}
+tdf_winners %>% count(winner_name) %>% arrange(desc(n)) %>% filter(n > 1) %>% 
+  ggplot(mapping = aes(x = fct_reorder(winner_name, n), y = n)) + 
+  geom_col(width = 0.5) + coord_flip() + 
+  labs(x = "Winner", y = "Number of Wins", title = "Multi-TDF Winners")
+```
+
+Check `birth_country`, `nationality`:
+
+```{r}
+tdf_winners %>% 
+  group_by(birth_country) %>% mutate(count = n()) %>% ungroup() %>% 
+  ggplot(mapping = aes(x = fct_reorder(birth_country, count), fill = nationality)) + 
+  geom_bar() +
+  coord_flip() + 
+  labs(x = "Country")
+```
+
+Check for `birth_town` with more than one unique winner:
+
+```{r}
+tdf_winners %>% 
+  group_by(birth_town) %>% summarise(num_unique_winners = n_distinct(winner_name)) %>% 
+  filter(num_unique_winners > 1)
+```
+
+Check `nationality` winners over time:
+
+```{r}
+tdf_winners %>% ggplot(mapping = aes(x = start_date, y = nationality)) + geom_point() +
+  geom_step()
+```
+
+Investigate age at death for those winners who have deceased: 
+
+```{r}
+tdf_winners %>%
+  mutate(death_age = as.numeric(difftime(died, born, units = "days"))/365.25) %>% 
+  ggplot(mapping = aes(x = death_age, fill = year < 1950)) + 
+  geom_histogram(binwidth = 1, position = "dodge") +
+  geom_vline(mapping = aes(xintercept = median(death_age, na.rm = TRUE)), 
+             color = "blue", linetype = "dashed")
+```
+
+Suprising range of age at death, with  ~ 50% < 60 and not due to increased life expectancy. 
+
+Visualize outputs:
+
+```{r}
+tdf_winners %>% 
+  select(distance, time_overall, time_margin) %>% 
+  gather() %>% 
+  ggplot(mapping = aes(x = value)) + geom_histogram() + facet_wrap(~key, scales = "free_x")
+```
+
+Visualize how `time_overall` has changed over time, first normalize by distance as these change per race/year:
+
+```{r}
+tdf_winners %>% 
+  mutate(norm_time = time_overall/distance) %>% 
+  select(year, distance, time_overall, time_margin, norm_time) %>% 
+  gather(key = "key", value = "value", -year) %>% 
+  ggplot(mapping = aes(x = year, y = value)) + 
+  # geom_point() +
+  geom_line() + 
+  facet_grid(key ~ ., scales = "free_y")
+```
+
+These trends are suggestive of an increase in athleticism over time (specifically achieving better times per distance) that leveled out ~ year 2000. 
+
+Check correlation between age, weight, hieght, stages_led, stage_wins by normalized race time:
+
+```{r}
+tdf_winners %>% 
+  mutate(norm_time = time_overall/distance) %>% 
+  select(age, weight, height, stage_wins, stages_led, norm_time) %>% na.omit() %>% 
+  cor() %>% 
+  corrplot::corrplot()
+```
+
+```{r}
+tdf_winners %>% 
+  mutate(norm_time = time_overall/distance) %>% 
+  select(age, weight, height, stage_wins, stages_led, norm_time) %>% 
+  gather(key = "key", value = "value", -norm_time) %>% 
+  ggplot(mapping = aes(x = value, y = norm_time)) + geom_point() + 
+  facet_wrap(~key, scales = "free_x") + geom_smooth(method = "lm") 
+```
+
+
+Taller men have better times per distance. 
+
+Evaluate out potential input variables for participants have changed over time:
+
+```{r}
+tdf_winners %>% 
+  select(age, weight, height, stage_wins, stages_led, start_date) %>% 
+  gather(key = "key", value = "value", -start_date) %>% 
+  ggplot(mapping = aes(x = start_date, y = value))  + geom_line() + facet_grid(key ~., scales = "free_y")  
+```
+
+Not many trends over time in winners. 
+
+## tdf_stages data
+
+Check other data sets:
+
+```{r}
+tdf_stages %>% head()
+stage_dat %>% head()
+```
+
+`tdf_stages` is race-stage level info (distance, location to-from, stage type, winner name and country); while `stage_dat` is race-stage-rider level. 
+
+Check if # stages align between data sets:
+```{r}
+tdf_stages %>% distinct(Stage) %>% nrow 
+stage_dat %>% distinct(stage_results_id) %>% nrow()
+```
+
+Expect 21 stages. Convert to `core_stage` extracting numeric porition only:
+
+```{r}
+tdf_stages <- tdf_stages %>% 
+  mutate(core_stage = as.numeric(str_extract(Stage, "[:digit:]{1,2}")),
+         core_stage = ifelse(Stage %in% "P", 0, core_stage))
+
+tdf_stages %>% 
+  ggplot(mapping = aes(x = core_stage)) + geom_histogram()
+```
+
+```{r}
+stage_dat <- stage_dat %>% 
+  mutate(core_stage = as.numeric(str_extract(stage_results_id, "[:digit:]{1,2}"))) 
+
+stage_dat %>% 
+  distinct(year, core_stage) %>% 
+  ggplot(mapping = aes(x = core_stage)) + geom_histogram()
+```
+
+Unsure which stages in `tdf_stages` represent the 21 stages associated with the race. `stages_dat` has 0-22, are two of these not race stages? For example 0 or P stage is preliminary stage.
+
+Focusing on `tdf_stages` data, how have # of stages changed over time?
+
+```{r}
+tdf_stages %>% 
+  mutate(core_stage = as.numeric(str_extract(Stage, "[:digit:]{1,2}")),
+         year = lubridate::year(Date)) %>% 
+  group_by(year) %>% summarise(max_stage = max(core_stage, na.rm = TRUE)) %>% 
+  ggplot(mapping = aes(x = year, y = max_stage)) + geom_point() + geom_line()
+```
+
+Large shift in the race in 1926.
+
+How do distnaces vary by stage?
+
+```{r}
+tdf_stages %>% 
+  mutate(core_stage = as.numeric(str_extract(Stage, "[:digit:]{1,2}")),
+         year = lubridate::year(Date)) %>% 
+  filter(year > 1926) %>% 
+  ggplot(mapping = aes(x = core_stage, group = core_stage, y = Distance)) + 
+  stat_summary(fun.data = "mean_se",
+               fun.args = list(mult = 2),
+               color = "red") +
+  coord_flip() 
+```
+
+This assumes all stages are valid, which is likely not the case since we only expect 21 stages, but see up to 25. E.g.:
+
+```{r}
+tdf_stages %>% 
+  mutate(core_stage = as.numeric(str_extract(Stage, "[:digit:]{1,2}")),
+         year = lubridate::year(Date)) %>% 
+  filter(core_stage > 21) %>% count(core_stage)
+```
+
+Look at stage `Type` variable (ignore trials):
+
+```{r}
+tdf_stages %>% 
+  mutate(year = lubridate::year(Date)) %>% 
+  mutate(Type = str_to_lower(Type)) %>%
+  filter(!str_detect(Type, "trial")) %>% 
+  group_by(year, Type) %>% summarise(count = n()) %>% 
+  ggplot(mapping = aes(x = year, y = count, fill = Type)) + geom_col() + 
+  coord_flip() + labs(title = "Frequency of Stage Type in a Race by Year")
+```
+
+It looks like the naming convention for stages changed recently. Can see in 1976 and 1997, some overlap, but full transition around 2009.
+
+```{r}
+tdf_stages %>% 
+  filter(!str_detect(Type, "trial")) %>% 
+  mutate(year = lubridate::year(Date)) %>% 
+  filter(year %in% c(1950, 2017)) %>% distinct(year, Type)
+
+tdf_stages %>% 
+  filter(!str_detect(Type, "trial")) %>% 
+  mutate(year = lubridate::year(Date)) %>% 
+  filter(year %in% c(1976)) %>% distinct(year, Type)
+```
+
+Plain stage --> Flat stage
+Stage with mountains --> Medium/High mountain stage
+
+```{r}
+tdf_stages %>% 
+  mutate(year = lubridate::year(Date)) %>% 
+  filter(str_detect(Type, "Flat stage")) %>% 
+  pull(year) %>% range()
+
+tdf_stages %>% 
+  mutate(year = lubridate::year(Date)) %>% 
+  filter(str_detect(Type, "mountain stage")) %>% 
+  pull(year) %>% range()
+```
+
+Look at # of wins across stages by country (again, all stages retained which may not be valid):
+
+```{r, fig.height=8}
+tdf_stages %>% 
+  # filter(!str_detect(Type, "trial")) %>% # remove trials
+  filter(str_length(Winner_Country) == 3) %>% # drop ties
+  count(Winner_Country) %>% 
+  arrange(desc(n)) %>% 
+  ggplot(mapping = aes(x = fct_reorder(Winner_Country, n), y = n)) + geom_col() +
+  coord_flip() + 
+  labs(x = "Country", y = "# of Stages Won Over All TDF Races")
+```
+
+Interestingly, the Netherlands has a lot of stage wins, but not many overall race wins. 
+
+Using `stage_dat` plot # of participants at end compared to start of race (stage 1 vs max stage):
+
+```{r}
+stage_dat %>% 
+  count(year, stage_results_id)  %>% 
+   mutate(core_stage = as.numeric(str_extract(stage_results_id, "[:digit:]{1,2}"))) %>% 
+  distinct(year, core_stage, n) %>% 
+  group_by(year) %>% summarise(min_stage = min(core_stage),
+                                  max_stage = max(core_stage),
+                                  start_count = n[which(core_stage == 1)],
+                                  end_count = n[which(core_stage == max_stage[1])],
+                                  delta_count = start_count - end_count) %>% 
+  ggplot(mapping = aes(x = year, y = delta_count)) + geom_point() + geom_line()
+```
+
+
+
+## Appendix
+
+### Cluster analysis
+
+```{r}
+## select input variables from winner dataset
+clust_dat <- tdf_winners %>% 
+  select(edition, age, weight, height, stage_wins, stages_led) %>% na.omit() 
+
+## center/scale
+prepro1 <- caret::preProcess(clust_dat %>% select(-edition), method = c("center", "scale"))
+clust_dat <- predict(prepro1, clust_dat)
+
+## conduct hierarchical clustering
+clust1 <- hclust(dist(clust_dat %>% select(-edition)), method = "ward.D2")
+
+plot(clust1, hang = -1, labels = F)
+
+## visualize clusters over time by key output
+tdf_winners %>% 
+  left_join(clust_dat %>% select(edition) %>% 
+              mutate(clust = cutree(clust1, k = 2)), by = "edition") %>% 
+  ggplot(mapping = aes(x = start_date, y = time_overall/distance, color = factor(clust))) +
+  geom_point()
+
+## visualize differences in clusters in input space
+tdf_winners %>% 
+  left_join(clust_dat %>% select(edition) %>% 
+              mutate(clust = cutree(clust1, k = 2)), by = "edition") %>% 
+  select(age, height, weight, stage_wins, stages_led, clust) %>% 
+  gather(key = "key", value = "value", -clust) %>% 
+  ggplot(mapping = aes(x = value, fill = factor(clust))) + 
+  geom_histogram(position = "dodge") + 
+  facet_grid(clust~key, scales = "free_x")
+
+```
