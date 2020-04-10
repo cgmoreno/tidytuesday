@@ -342,7 +342,8 @@ tdf_stages %>%
   stat_summary(fun.data = "mean_se",
                fun.args = list(mult = 2),
                color = "red") +
-  coord_flip() 
+  coord_flip() + labs(title = "Mean Distance by Stage (Races > 1926)",
+                      caption = 'All "Stage Types" included which may be invalid')
 ```
 
 ![](tdf_data_files/figure-gfm/unnamed-chunk-23-1.png)<!-- -->
@@ -374,7 +375,8 @@ tdf_stages %>%
   filter(!str_detect(Type, "trial")) %>% 
   group_by(year, Type) %>% summarise(count = n()) %>% 
   ggplot(mapping = aes(x = year, y = count, fill = Type)) + geom_col() + 
-  coord_flip() + labs(title = "Frequency of Stage Type in a Race by Year")
+  coord_flip() + labs(title = "Frequency of Stage Type in a Race by Year",
+                      caption = "Naming conventions used changed after 2009")
 ```
 
 ![](tdf_data_files/figure-gfm/unnamed-chunk-25-1.png)<!-- -->

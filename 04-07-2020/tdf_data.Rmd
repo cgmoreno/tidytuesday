@@ -228,7 +228,8 @@ tdf_stages %>%
   stat_summary(fun.data = "mean_se",
                fun.args = list(mult = 2),
                color = "red") +
-  coord_flip() 
+  coord_flip() + labs(title = "Mean Distance by Stage (Races > 1926)",
+                      caption = 'All "Stage Types" included which may be invalid')
 ```
 
 This assumes all stages are valid, which is likely not the case since we only expect 21 stages, but see up to 25. E.g.:
@@ -249,7 +250,8 @@ tdf_stages %>%
   filter(!str_detect(Type, "trial")) %>% 
   group_by(year, Type) %>% summarise(count = n()) %>% 
   ggplot(mapping = aes(x = year, y = count, fill = Type)) + geom_col() + 
-  coord_flip() + labs(title = "Frequency of Stage Type in a Race by Year")
+  coord_flip() + labs(title = "Frequency of Stage Type in a Race by Year",
+                      caption = "Naming conventions used changed after 2009")
 ```
 
 It looks like the naming convention for stages changed recently. Can see in 1976 and 1997, some overlap, but full transition around 2009.
