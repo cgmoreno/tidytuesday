@@ -1,0 +1,282 @@
+---
+title: "Tidy Tuesday - BBC Best Hip Hop Song Rankings"
+author: "Catalina Moreno"
+date: "April 14, 2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, comment = NA)
+```
+
+## Load libs
+
+```{r}
+library(tidyverse)
+```
+
+## Read in data
+
+```{r}
+polls <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-14/polls.csv')
+
+rankings <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-04-14/rankings.csv')
+```
+
+## Initial eda 
+
+### `polls` data
+
+
+```{r}
+polls %>% glimpse()
+```
+
+Critic info - check number of entries per unique critic:
+
+```{r}
+polls %>% count(critic_name, critic_rols, critic_country, critic_country2) %>% 
+  count(n)
+```
+
+Looks good. Visualize `critic_country`:
+
+```{r}
+polls %>% 
+  group_by(critic_country) %>% mutate(count = n()) %>% 
+  ggplot(mapping = aes(x = fct_reorder(critic_country, count)))  + 
+  geom_bar() + 
+  coord_flip() +
+  labs(x = "critic_country")
+```
+
+Critics are primarily from the US. 
+
+```{r}
+polls %>% count(critic_rols) %>% arrange(desc(n)) %>% head(n = 10)
+```
+
+A mix of roles and actual institution critic works for. 
+
+Look at song info:
+
+```{r}
+polls %>% 
+  count(title) %>% arrange(desc(n)) %>% head(n = 10)
+```
+
+Check all rankings over time:
+
+```{r}
+polls %>% 
+  ggplot(mapping = aes(x = year, y = rank))+ geom_count()
+```
+
+Most ranked songs are in the early-mid 1990's. 
+
+
+### `rankings` data 
+
+Reproduce the ranking system:
+
+```{r}
+rankings_manual <- polls %>% mutate(score = 12 + -2*rank) %>% 
+  group_by(title, artist) %>% summarise(total_points = sum(score),
+                                total_votes = n(),
+                                total_v1 = sum(rank == 1),
+                                total_v2 = sum(rank == 2),
+                                total_v3 = sum(rank == 3),
+                                total_v4 = sum(rank == 4),
+                                total_v5 = sum(rank == 5),
+                                check = total_v1 + total_v2 + total_v3 + total_v4 + total_v5) %>% 
+  # filter(check != total_votes)
+  ungroup() %>% 
+  arrange(desc(total_points),
+          desc(total_votes),
+          desc(total_v1), 
+          desc(total_v2),
+          desc(total_v3),
+          desc(total_v4),
+          desc(total_v5)) %>% 
+  mutate(score = 1:n()) 
+  
+```
+
+Join with `rankings` and see if reproduced results:
+
+```{r}
+rankings %>% 
+  left_join(rankings_manual, by = c("ID" = "score")) %>% 
+  filter(title.x != title.y) %>% nrow()
+```
+
+Many rows do not align. Check a few of the top entries for equivalency in ranking metrics (points, votes etc):
+
+```{r}
+rankings %>% head(n=20) %>% 
+  left_join(rankings_manual %>% head(n = 20), by = c("ID" = "score")) %>% 
+  filter(title.x != title.y) %>% nrow()
+```
+
+First 20 titles/scores match. Check if calcualted metrics match:
+
+```{r}
+rankings %>% head(n=20) %>% mutate(type = "original") %>% 
+  select(-ID, -year, -gender) %>% 
+  bind_rows(rankings_manual %>% head(n=20) %>% select(-score, -check) %>% 
+              rename(points = total_points, 
+                     n = total_votes,
+                     n1 = total_v1,
+                     n2 = total_v2, 
+                     n3 = total_v3, 
+                     n4 = total_v4,
+                     n5 = total_v5) %>%   mutate(type = "manual")) %>% 
+  gather(key = "key", value = "value", -artist,-title, -type) %>% 
+  spread(key = "type", value = "value") %>% 
+  ggplot(mapping = aes(x = manual, y = original)) +
+  geom_point() + 
+  geom_abline() +
+  facet_wrap(~key, scales = "free")
+```
+
+An exact match. 
+
+```{r}
+rankings %>% anti_join(rankings_manual, by = c("title"))
+```
+
+And all titles overlap. 
+
+Compare distinct `title`, `artist` pairs in `rankings` as it has more rows than `rankings_manual`:
+
+```{r}
+rankings %>% count(title, artist) %>% filter(n > 1)
+rankings %>% filter(title %in% c("All Of The Lights"))
+```
+
+It lookes like "All Of The Lights" is incorrectly entered 2x, which means it's points are split among two entries. Check its existence in `polls` data:
+
+```{r}
+polls %>% filter(title %in% c("All Of The Lights"))
+```
+
+It appears that one critic entered `gender = male` when it should have been `mixed`. 
+
+Solution: use `rankings_manual` in place of `rankings` to accurately represent "All Of The Lights" as one song. 
+
+### Data correction
+
+Recreate `rankings_manual` to mimic `rankings` more closely, first fixing `polls` incorrect entry:
+
+```{r}
+polls <- polls %>% mutate(gender = ifelse(title %in% "All Of The Lights", "mixed", gender))
+```
+
+```{r}
+rankings_manual_final <- polls %>% 
+  mutate(score = 12 + -2*rank) %>% 
+  group_by(title, artist) %>% summarise(gender = unique(gender),
+                                        year = unique(year),
+                                        points = sum(score),
+                                        n = n(),
+                                        n1 = sum(rank == 1),
+                                        n2 = sum(rank == 2),
+                                        n3 = sum(rank == 3),
+                                        n4 = sum(rank == 4),
+                                        n5 = sum(rank == 5)) %>% 
+  ungroup() %>% 
+  arrange(desc(points),
+          desc(n),
+          desc(n1), 
+          desc(n2),
+          desc(n3),
+          desc(n4),
+          desc(n5)) %>% 
+  mutate(ID = 1:n()) 
+```
+
+## Top songs eda
+
+Look at top 20 ranked songs:
+
+```{r}
+rankings_manual_final %>% 
+  slice(1:20) %>% 
+  ggplot(mapping = aes(x = fct_reorder(title, points), y = points, fill = gender)) + 
+  geom_col() + 
+  coord_flip() +
+  labs(x = "title", title = "Top 20 Ranked Hip-Hop Songs") +
+  theme(legend.position = "bottom")
+```
+
+Evaluate all rankings by gender:
+
+```{r}
+rankings_manual_final %>% 
+  ggplot(mapping = aes(x = year, y = points, color = gender)) + geom_point() +
+  facet_wrap(~gender)
+
+rankings %>% 
+  ggplot(mapping = aes(x = gender, y = log(points))) + geom_boxplot(varwidth = T) + 
+  stat_summary(fun.y = "mean", geom = "point", color = "red") +
+  stat_summary(fun.y = "mean", geom = "line", color = "red", mapping = aes(group = 1))
+```
+
+Songs are mostly male, but mean points by gender shows males also score higher on average compared to females or mixed (note on log scale). 
+
+"Juicy" won as the top ranked song by a landslide, but check for artists ranked across > 1 song:
+
+```{r}
+rankings_manual_final %>% 
+  distinct(title, artist) %>% count(artist) %>% arrange(desc(n)) %>% 
+  filter(n > 1) %>% 
+  ggplot(mapping = aes(x = fct_reorder(artist, n), y = n)) + 
+  geom_col() +
+  coord_flip() +
+  labs(x = "Artists w/ > 1 title ranked")
+```
+
+Jay-z's songs are ranked the most often across critics. How do the `points` for Jay'Z's songs compare to the leading song ("Juicy" by The Notorious B.I.G)?
+
+```{r}
+rankings_manual_final %>% 
+  filter(str_detect(artist, "JAY")) %>% 
+  ggplot(mapping = aes(x = fct_reorder(title,points), y = points, fill = artist)) + 
+  geom_col() + 
+  coord_flip() +
+  geom_hline(yintercept = max(rankings_manual_final$points), color = "red", linetype = "dashed") +
+  labs(x = "title", title = "Jay-Z's mentioned songs and scores") +
+  theme(legend.position = "bottom")
+```
+
+Although Jay-Z has the most mentioned songs, their points are much lower than the top-ranked song. Also, we see Jay-Z has even more songs than counted above, as he appears as a solo artist as well as in collaborations with other artists. 
+
+
+## Summary
+
+This BBC dataset for ranking the top hip hop songs was very tidy. The only issue I caught was different `gender` entries for the song "All Of The Lights" which I believe should be considered `gender = mixed`. Because it had multiple entries (`mixed` and `male`) it was ranked in two separate entries of the `rankings` data set and did not get the correct `points` assignment. This means the `rankings` data set is incorrect starting at ranking 24: 
+
+
+
+```{r}
+rankings %>% 
+  arrange(desc(points)) %>% 
+  slice(1:30) %>% 
+  mutate(type = "original") %>% 
+  bind_rows(rankings_manual_final %>% 
+              arrange(desc(points)) %>% 
+              slice(1:30) %>%
+              mutate(type = "corrected")) %>% 
+  ggplot(mapping = aes(x = ID, y = type, color = ID > 23)) + 
+  geom_text(mapping = aes(label = title), size = 3) +
+  coord_flip() +
+  scale_color_manual(values = c("TRUE" = "brown3", "FALSE" = "dodgerblue")) +
+  labs(color = "Rankings Change After Correction", x = "Ranking", y = "Ranking Data Source",
+       title = 'Effect of incorrect `gender` entry for "All Of The Lights" starts at song 24') +
+  theme(legend.position = "bottom")
+
+
+```
+
+"Juicy" by The Notorious B.I.G is still by and far the leading ranked hip hop song, even after the data correction. 
+
