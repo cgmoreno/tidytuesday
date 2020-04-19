@@ -2,7 +2,7 @@
 
 Key figures and takeaways from `tidytuesday` participation:
 
-* **04-14-2020:** BBC top rankings for hip-hop artists; one discrepancy found with `gender` entry for "All Of The Lights" (both `mixed` and `male` are entered). If this is resolved, the rankings are affected started at song 24
+* **04-14-2020:** BBC top rankings for hip-hop artists; one discrepancy found with `gender` entry for "All Of The Lights" (both `mixed` and `male` are entered). If this is resolved, the rankings are affected starting at song 24
 
 ![this week](04-14-2020/hip_hop_rankings_files/figure-gfm/unnamed-chunk-22-1.png)
 
