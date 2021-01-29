@@ -22,3 +22,8 @@ Key figures and takeaways from `tidytuesday` participation:
 
 ![this week](05-07-2019/ed_dataset_files/figure-markdown_github/compl3-1.png)
 
+* **01-26-2021** eval of data from Break Free From Plastic initiative; top contributors in dataset to waste in 2019-2020:
+
+![this week](01-26-2021/BFFP_data_files/figure_gfm/unnamed-chunk-24-1.png)
+
+
